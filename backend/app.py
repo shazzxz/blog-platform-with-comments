@@ -16,7 +16,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
-EMAIL_RE = re.compile(r"^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
+EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
 def utc_now() -> str:
@@ -337,6 +337,44 @@ def create_app(test_config=None):
         if request.path.startswith("/api/"):
             return jsonify({"error": "Route not found."}), 404
         return jsonify({"error": "Page not found."}), 404
+
+
+    # Initialize this app instance's database too (important for tests and custom DB paths).
+    with app.app_context():
+        conn = get_db()
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                author_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                excerpt TEXT NOT NULL DEFAULT '',
+                body TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'Journal',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(author_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS comments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_id INTEGER NOT NULL,
+                author_id INTEGER NOT NULL,
+                body TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE,
+                FOREIGN KEY(author_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_id);
+            CREATE INDEX IF NOT EXISTS idx_posts_date ON posts(created_at);
+            CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id, created_at);
+        """)
+        conn.commit()
 
     return app
 
